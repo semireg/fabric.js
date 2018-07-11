@@ -59,6 +59,7 @@
     }
     this.setupGLContext(this.tileSize, this.tileSize);
     this.captureGPUInfo();
+    this.fallback2dBackend = new fabric.Canvas2dFilterBackend();
   };
 
   WebglFilterBackend.prototype = /** @lends fabric.WebglFilterBackend.prototype */ {

@@ -458,8 +458,30 @@
       if (!fabric.filterBackend) {
         fabric.filterBackend = fabric.initFilterBackend();
       }
-      fabric.filterBackend.applyFilters(
-        filters, this._originalElement, sourceWidth, sourceHeight, this._element, this.cacheKey);
+
+      var newSource = fabric.util.createCanvasElement();
+      newSource.width = sourceWidth;
+      newSource.height = sourceHeight;
+      var newSourceCtx = newSource.getContext('2d');
+      newSourceCtx.drawImage(this._originalElement, 0, 0, sourceWidth, sourceHeight);
+
+      filters.forEach(function(filter) {
+        if (!filter) {
+          return;
+        }
+        var backend = fabric.filterBackend;
+        if (filter.fragmentSource === null) {
+          backend = backend.fallback2dBackend;
+        }
+
+        backend.applyFilters(
+          [filter], newSource, sourceWidth, sourceHeight, this._element);
+
+        newSourceCtx.clearRect(0, 0, sourceWidth, sourceHeight);
+        newSourceCtx.drawImage(this._element, 0, 0, sourceWidth, sourceHeight);
+
+      }, this);
+
       if (this._originalElement.width !== this._element.width ||
         this._originalElement.height !== this._element.height) {
         this._filterScalingX = this._element.width / this._originalElement.width;
