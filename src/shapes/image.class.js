@@ -164,6 +164,9 @@
       }
       this._element = element;
       this._originalElement = element;
+      this._scaledEl = element;
+      this._filteredEl = element;
+
       this._initConfig(options);
       if (this.resizeFilter) {
         this.applyResizeFilters();
@@ -186,6 +189,7 @@
       }
       this._originalElement = undefined;
       this._element = undefined;
+      this._scaledEl = undefined;
       this._filteredEl = undefined;
     },
 
@@ -389,29 +393,26 @@
           minimumScale = this.minimumScaleTrigger,
           scaleX = this.scaleX * retinaScaling,
           scaleY = this.scaleY * retinaScaling,
-          elementToFilter = this._filteredEl || this._originalElement;
+          elementToScale = this._originalElement;
       if (this.group) {
         this.set('dirty', true);
       }
-      if (!filter || (scaleX > minimumScale && scaleY > minimumScale)) {
-        this._element = elementToFilter;
-        this._filterScalingX = 1;
-        this._filterScalingY = 1;
-        return;
-      }
+
       if (!fabric.filterBackend) {
         fabric.filterBackend = fabric.initFilterBackend();
       }
       var canvasEl = fabric.util.createCanvasElement(),
-          cacheKey = this._filteredEl ? this.cacheKey : (this.cacheKey + '_filtered'),
-          sourceWidth = elementToFilter.width, sourceHeight = elementToFilter.height;
+          cacheKey = this.cacheKey,
+          sourceWidth = elementToScale.width, sourceHeight = elementToScale.height;
       canvasEl.width = sourceWidth;
       canvasEl.height = sourceHeight;
       this._element = canvasEl;
+      this._scaledEl = canvasEl;
+
       filter.scaleX = scaleX;
       filter.scaleY = scaleY;
       fabric.filterBackend.applyFilters(
-        [filter], elementToFilter, sourceWidth, sourceHeight, this._element, cacheKey);
+        [filter], elementToScale, sourceWidth, sourceHeight, canvasEl, cacheKey);
       this._filterScalingX = canvasEl.width / this._originalElement.width;
       this._filterScalingY = canvasEl.height / this._originalElement.height;
     },
@@ -433,17 +434,16 @@
       }
       if (filters.length === 0) {
         this._element = this._originalElement;
-        this._filteredEl = null;
         this._filterScalingX = 1;
         this._filterScalingY = 1;
         return this;
       }
 
-      var imgElement = this._originalElement,
+      var imgElement = this._scaledEl || this._originalElement,
           sourceWidth = imgElement.naturalWidth || imgElement.width,
           sourceHeight = imgElement.naturalHeight || imgElement.height;
 
-      if (this._element === this._originalElement) {
+      if (!this._filteredEl || this._filteredEl === this._originalElement) {
         // if the element is the same we need to create a new element
         var canvasEl = fabric.util.createCanvasElement();
         canvasEl.width = sourceWidth;
@@ -453,8 +453,10 @@
       }
       else {
         // clear the existing element to get new filter data
-        this._element.getContext('2d').clearRect(0, 0, sourceWidth, sourceHeight);
+        this._element = this._filteredEl;
+        this._filteredEl.getContext('2d').clearRect(0, 0, sourceWidth, sourceHeight);
       }
+
       if (!fabric.filterBackend) {
         fabric.filterBackend = fabric.initFilterBackend();
       }
@@ -463,7 +465,7 @@
       newSource.width = sourceWidth;
       newSource.height = sourceHeight;
       var newSourceCtx = newSource.getContext('2d');
-      newSourceCtx.drawImage(this._originalElement, 0, 0, sourceWidth, sourceHeight);
+      newSourceCtx.drawImage(this._scaledEl, 0, 0, sourceWidth, sourceHeight);
 
       filters.forEach(function(filter) {
         if (!filter) {
@@ -479,9 +481,10 @@
 
         newSourceCtx.clearRect(0, 0, sourceWidth, sourceHeight);
         newSourceCtx.drawImage(this._element, 0, 0, sourceWidth, sourceHeight);
-
       }, this);
 
+      var ctx = this._element.getContext('2d');
+      var imageData = ctx.getImageData(0, 0, sourceWidth, sourceHeight);
       if (this._originalElement.width !== this._element.width ||
         this._originalElement.height !== this._element.height) {
         this._filterScalingX = this._element.width / this._originalElement.width;
