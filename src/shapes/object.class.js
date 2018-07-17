@@ -1331,6 +1331,7 @@
       ctx.save();
       this._setLineDash(ctx, this.strokeDashArray, this._renderDashedStroke);
       this._applyPatternGradientTransform(ctx, this.stroke);
+      ctx.scale(1 / this.scaleX, 1 / this.scaleY);
       ctx.stroke();
       ctx.restore();
     },
