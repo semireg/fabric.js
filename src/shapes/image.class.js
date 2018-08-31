@@ -473,7 +473,7 @@
         }
         var backend = fabric.filterBackend;
         if (filter.fragmentSource === null) {
-          backend = backend.fallback2dBackend;
+          backend = backend.fallback2dBackend || backend;
         }
 
         backend.applyFilters(
