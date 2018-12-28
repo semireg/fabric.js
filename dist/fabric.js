@@ -22095,24 +22095,42 @@ fabric.util.object.extend(fabric.Object.prototype, /** @lends fabric.Object.prot
       var newSourceCtx = newSource.getContext('2d');
       newSourceCtx.drawImage(this._scaledEl, 0, 0, sourceWidth, sourceHeight);
 
-      filters.forEach(function(filter) {
-        if (!filter) {
+      var filterGroups = []; // Array of arrays of filters
+      var lastGroup = [];
+      var lastFilterSupportsWebGl = null;
+      filters.filter(Boolean).forEach(function(f) {
+        var fSupportsWebGl = f.fragmentSource !== null;
+        if (lastFilterSupportsWebGl === null) {
+          lastFilterSupportsWebGl = fSupportsWebGl;
+        }
+        if (fSupportsWebGl === lastFilterSupportsWebGl) { // Indicates non-WebGL
+          lastGroup.push(f);
+        }
+        else {
+          filterGroups.push(lastGroup);
+          lastGroup = [f];
+        }
+      });
+      filterGroups.push(lastGroup);
+
+      filterGroups.forEach(function(fGroup) {
+        if (fGroup.length === 0) {
           return;
         }
+
+        var oneFilter = fGroup[0];
         var backend = fabric.filterBackend;
-        if (filter.fragmentSource === null) {
+        if (oneFilter.fragmentSource === null) {
           backend = backend.fallback2dBackend || backend;
         }
 
         backend.applyFilters(
-          [filter], newSource, sourceWidth, sourceHeight, this._element);
+          fGroup, newSource, sourceWidth, sourceHeight, this._element);
 
         newSourceCtx.clearRect(0, 0, sourceWidth, sourceHeight);
         newSourceCtx.drawImage(this._element, 0, 0, sourceWidth, sourceHeight);
       }, this);
 
-      var ctx = this._element.getContext('2d');
-      var imageData = ctx.getImageData(0, 0, sourceWidth, sourceHeight);
       if (this._originalElement.width !== this._element.width ||
         this._originalElement.height !== this._element.height) {
         this._filterScalingX = this._element.width / this._originalElement.width;
