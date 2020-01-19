@@ -13,9 +13,8 @@
      */
     _shouldGroup: function(e, target) {
       var activeObject = this._activeObject;
-
       return activeObject && this._isSelectionKeyPressed(e) && target && target.selectable && this.selection &&
-            (activeObject !== target || activeObject.type === 'activeSelection');
+            (activeObject !== target || activeObject.type === 'activeSelection') && !target.onSelect({ e: e });
     },
 
     /**
@@ -25,6 +24,7 @@
      */
     _handleGrouping: function (e, target) {
       var activeObject = this._activeObject;
+      // avoid multi select when shift click on a corner
       if (activeObject.__corner) {
         return;
       }
@@ -32,7 +32,7 @@
         // if it's a group, find target again, using activeGroup objects
         target = this.findTarget(e, true);
         // if even object is not found or we are on activeObjectCorner, bail out
-        if (!target) {
+        if (!target || !target.selectable) {
           return;
         }
       }
@@ -53,6 +53,7 @@
       if (activeSelection.contains(target)) {
         activeSelection.removeWithUpdate(target);
         this._hoveredTarget = target;
+        this._hoveredTargets = this.targets.concat();
         if (activeSelection.size() === 1) {
           // activate last remaining object
           this._setActiveObject(activeSelection.item(0), e);
@@ -61,6 +62,7 @@
       else {
         activeSelection.addWithUpdate(target);
         this._hoveredTarget = activeSelection;
+        this._hoveredTargets = this.targets.concat();
       }
       this._fireSelectionEvents(currentActiveObjects, e);
     },
@@ -71,6 +73,9 @@
     _createActiveSelection: function(target, e) {
       var currentActives = this.getActiveObjects(), group = this._createGroup(target);
       this._hoveredTarget = group;
+      // ISSUE 4115: should we consider subTargets here?
+      // this._hoveredTargets = [];
+      // this._hoveredTargets = this.targets.concat();
       this._setActiveObject(group, e);
       this._fireSelectionEvents(currentActives, e);
     },
@@ -80,7 +85,7 @@
      * @param {Object} target
      */
     _createGroup: function(target) {
-      var objects = this.getObjects(),
+      var objects = this._objects,
           isActiveLower = objects.indexOf(this._activeObject) < objects.indexOf(target),
           groupObjects = isActiveLower
             ? [this._activeObject, target]
@@ -97,7 +102,7 @@
      */
     _groupSelectedObjects: function (e) {
 
-      var group = this._collectObjects(),
+      var group = this._collectObjects(e),
           aGroup;
 
       // do not create group for 1 element only
@@ -115,7 +120,7 @@
     /**
      * @private
      */
-    _collectObjects: function() {
+    _collectObjects: function(e) {
       var group = [],
           currentObject,
           x1 = this._groupSelector.ex,
@@ -140,12 +145,17 @@
             (allowIntersect && currentObject.containsPoint(selectionX2Y2))
         ) {
           group.push(currentObject);
-
           // only add one object if it's a click
           if (isClick) {
             break;
           }
         }
+      }
+
+      if (group.length > 1) {
+        group = group.filter(function(object) {
+          return !object.onSelect({ e: e });
+        });
       }
 
       return group;

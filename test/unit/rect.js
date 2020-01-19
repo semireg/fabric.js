@@ -14,6 +14,7 @@
     'strokeWidth':              1,
     'strokeDashArray':          null,
     'strokeLineCap':            'butt',
+    'strokeDashOffset':         0,
     'strokeLineJoin':           'miter',
     'strokeMiterLimit':         4,
     'scaleX':                   1,
@@ -33,7 +34,7 @@
     'rx':                       0,
     'ry':                       0,
     'skewX':                    0,
-    'skewY':                    0,
+    'skewY':                    0
   };
 
   QUnit.module('fabric.Rect');
@@ -104,7 +105,7 @@
   QUnit.test('fabric.Rect.fromElement', function(assert) {
     assert.ok(typeof fabric.Rect.fromElement === 'function');
 
-    var elRect = fabric.document.createElement('rect');
+    var elRect = fabric.document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     fabric.Rect.fromElement(elRect, function(rect) {
       var expectedObject = fabric.util.object.extend({ }, REFERENCE_RECT);
       expectedObject.visible = false;
@@ -114,23 +115,24 @@
   });
 
   QUnit.test('fabric.Rect.fromElement with custom attributes', function(assert) {
-    var elRectWithAttrs = fabric.document.createElement('rect');
+    var namespace = 'http://www.w3.org/2000/svg';
+    var elRectWithAttrs = fabric.document.createElementNS(namespace, 'rect');
 
-    elRectWithAttrs.setAttribute('x', 10);
-    elRectWithAttrs.setAttribute('y', 20);
-    elRectWithAttrs.setAttribute('width', 222);
-    elRectWithAttrs.setAttribute('height', 333);
-    elRectWithAttrs.setAttribute('rx', 11);
-    elRectWithAttrs.setAttribute('ry', 12);
-    elRectWithAttrs.setAttribute('fill', 'rgb(255,255,255)');
-    elRectWithAttrs.setAttribute('opacity', 0.45);
-    elRectWithAttrs.setAttribute('stroke', 'blue');
-    elRectWithAttrs.setAttribute('stroke-width', 3);
-    elRectWithAttrs.setAttribute('stroke-dasharray', '5, 2');
-    elRectWithAttrs.setAttribute('stroke-linecap', 'round');
-    elRectWithAttrs.setAttribute('stroke-linejoin', 'bevil');
-    elRectWithAttrs.setAttribute('stroke-miterlimit', 5);
-    //elRectWithAttrs.setAttribute('transform', 'translate(-10,-20) scale(2) rotate(45) translate(5,10)');
+    elRectWithAttrs.setAttributeNS(namespace, 'x', 10);
+    elRectWithAttrs.setAttributeNS(namespace, 'y', 20);
+    elRectWithAttrs.setAttributeNS(namespace, 'width', 222);
+    elRectWithAttrs.setAttributeNS(namespace, 'height', 333);
+    elRectWithAttrs.setAttributeNS(namespace, 'rx', 11);
+    elRectWithAttrs.setAttributeNS(namespace, 'ry', 12);
+    elRectWithAttrs.setAttributeNS(namespace, 'fill', 'rgb(255,255,255)');
+    elRectWithAttrs.setAttributeNS(namespace, 'opacity', 0.45);
+    elRectWithAttrs.setAttributeNS(namespace, 'stroke', 'blue');
+    elRectWithAttrs.setAttributeNS(namespace, 'stroke-width', 3);
+    elRectWithAttrs.setAttributeNS(namespace, 'stroke-dasharray', '5, 2');
+    elRectWithAttrs.setAttributeNS(namespace, 'stroke-linecap', 'round');
+    elRectWithAttrs.setAttributeNS(namespace, 'stroke-linejoin', 'bevil');
+    elRectWithAttrs.setAttributeNS(namespace, 'stroke-miterlimit', 5);
+    //elRectWithAttrs.setAttributeNS(namespace, 'transform', 'translate(-10,-20) scale(2) rotate(45) translate(5,10)');
 
     fabric.Rect.fromElement(elRectWithAttrs, function(rectWithAttrs) {
       assert.ok(rectWithAttrs instanceof fabric.Rect);
@@ -172,31 +174,31 @@
     var rect = new fabric.Rect({ width: 100, height: 100, rx: 20, ry: 30, strokeWidth: 0 });
     var svg = rect.toSVG();
 
-    assert.equal(svg, '<rect x="-50" y="-50" rx="20" ry="30" width="100" height="100" style="stroke: none; stroke-width: 0; stroke-dasharray: none; stroke-linecap: butt; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(0,0,0); fill-rule: nonzero; opacity: 1;" transform="translate(50 50)"/>\n');
+    assert.equal(svg, '<g transform=\"matrix(1 0 0 1 50 50)\"  >\n<rect style=\"stroke: none; stroke-width: 0; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(0,0,0); fill-rule: nonzero; opacity: 1;\"  x=\"-50\" y=\"-50\" rx=\"20\" ry=\"30\" width=\"100\" height=\"100\" />\n</g>\n');
   });
 
   QUnit.test('toSVG with alpha colors fill', function(assert) {
     var rect = new fabric.Rect({ width: 100, height: 100, strokeWidth: 0, fill: 'rgba(255, 0, 0, 0.5)' });
     var svg = rect.toSVG();
-    assert.equal(svg, '<rect x="-50" y="-50" rx="0" ry="0" width="100" height="100" style="stroke: none; stroke-width: 0; stroke-dasharray: none; stroke-linecap: butt; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(255,0,0); fill-opacity: 0.5; fill-rule: nonzero; opacity: 1;" transform="translate(50 50)"/>\n');
+    assert.equal(svg, '<g transform=\"matrix(1 0 0 1 50 50)\"  >\n<rect style=\"stroke: none; stroke-width: 0; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(255,0,0); fill-opacity: 0.5; fill-rule: nonzero; opacity: 1;\"  x=\"-50\" y=\"-50\" rx=\"0\" ry=\"0\" width=\"100\" height=\"100\" />\n</g>\n');
   });
 
   QUnit.test('toSVG with id', function(assert) {
     var rect = new fabric.Rect({id: 'myRect', width: 100, height: 100, strokeWidth: 0, fill: 'rgba(255, 0, 0, 0.5)' });
     var svg = rect.toSVG();
-    assert.equal(svg, '<rect id="myRect" x="-50" y="-50" rx="0" ry="0" width="100" height="100" style="stroke: none; stroke-width: 0; stroke-dasharray: none; stroke-linecap: butt; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(255,0,0); fill-opacity: 0.5; fill-rule: nonzero; opacity: 1;" transform="translate(50 50)"/>\n');
+    assert.equal(svg, '<g transform=\"matrix(1 0 0 1 50 50)\" id=\"myRect\"  >\n<rect style=\"stroke: none; stroke-width: 0; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(255,0,0); fill-opacity: 0.5; fill-rule: nonzero; opacity: 1;\"  x=\"-50\" y=\"-50\" rx=\"0\" ry=\"0\" width=\"100\" height=\"100\" />\n</g>\n');
   });
 
   QUnit.test('toSVG with alpha colors stroke', function(assert) {
     var rect = new fabric.Rect({ width: 100, height: 100, strokeWidth: 0, fill: '', stroke: 'rgba(255, 0, 0, 0.5)' });
     var svg = rect.toSVG();
-    assert.equal(svg, '<rect x="-50" y="-50" rx="0" ry="0" width="100" height="100" style="stroke: rgb(255,0,0); stroke-opacity: 0.5; stroke-width: 0; stroke-dasharray: none; stroke-linecap: butt; stroke-linejoin: miter; stroke-miterlimit: 4; fill: none; fill-rule: nonzero; opacity: 1;" transform="translate(50 50)"/>\n');
+    assert.equal(svg, '<g transform=\"matrix(1 0 0 1 50 50)\"  >\n<rect style=\"stroke: rgb(255,0,0); stroke-opacity: 0.5; stroke-width: 0; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: none; fill-rule: nonzero; opacity: 1;\"  x=\"-50\" y=\"-50\" rx=\"0\" ry=\"0\" width=\"100\" height=\"100\" />\n</g>\n');
   });
 
   QUnit.test('toSVG with paintFirst set to stroke', function(assert) {
     var rect = new fabric.Rect({ width: 100, height: 100, paintFirst: 'stroke' });
     var svg = rect.toSVG();
-    assert.equal(svg, '<rect x="-50" y="-50" rx="0" ry="0" width="100" height="100" style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(0,0,0); fill-rule: nonzero; opacity: 1;" transform="translate(50.5 50.5)" paint-order="stroke" />\n');
+    assert.equal(svg, '<g transform=\"matrix(1 0 0 1 50.5 50.5)\"  >\n<rect style=\"stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(0,0,0); fill-rule: nonzero; opacity: 1;\"  paint-order=\"stroke\"  x=\"-50\" y=\"-50\" rx=\"0\" ry=\"0\" width=\"100\" height=\"100\" />\n</g>\n');
   });
 
   QUnit.test('toObject without default values', function(assert) {

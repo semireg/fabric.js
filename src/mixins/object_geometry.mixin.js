@@ -35,7 +35,7 @@
      * each property is an object with x, y, instance of Fabric.Point.
      * The coordinates depends from this properties: width, height, scaleX, scaleY
      * skewX, skewY, angle, strokeWidth, top, left.
-     * Those coordinates are usefull to understand where an object is. They get updated
+     * Those coordinates are useful to understand where an object is. They get updated
      * with oCoords but they do not need to be updated when zoom or panning change.
      * The coordinates get updated with @method setCoords.
      * You can calculate them without updating with @method calcCoords(true);
@@ -54,13 +54,19 @@
     matrixCache: null,
 
     /**
+     * custom controls interface
+     * controls are added by default_controls.js
+     */
+    controls: { },
+
+    /**
      * return correct set of coordinates for intersection
      */
     getCoords: function(absolute, calculate) {
       if (!this.oCoords) {
         this.setCoords();
       }
-      var coords = absolute ? this.aCoords : this.oCoords;
+      var coords = absolute ? this.aCoords : this.lineCoords;
       return getCoords(calculate ? this.calcCoords(absolute) : coords);
     },
 
@@ -109,9 +115,8 @@
      */
     isContainedWithinObject: function(other, absolute, calculate) {
       var points = this.getCoords(absolute, calculate),
-          i = 0, lines = other._getImageLines(
-            calculate ? other.calcCoords(absolute) : absolute ? other.aCoords : other.oCoords
-          );
+          otherCoords = absolute ? other.aCoords : other.lineCoords,
+          i = 0, lines = other._getImageLines(otherCoords);
       for (; i < 4; i++) {
         if (!other.containsPoint(points[i], lines)) {
           return false;
@@ -148,11 +153,9 @@
      * @return {Boolean} true if point is inside the object
      */
     containsPoint: function(point, lines, absolute, calculate) {
-      var lines = lines || this._getImageLines(
-            calculate ? this.calcCoords(absolute) : absolute ? this.aCoords : this.oCoords
-          ),
+      var coords = calculate ? this.calcLineCoords(absolute) : absolute ? this.aCoords : this.lineCoords,
+          lines = lines || this._getImageLines(coords),
           xPoints = this._findCrossPoints(point, lines);
-
       // if xPoints is odd then point is inside the object
       return (xPoints !== 0 && xPoints % 2 === 1);
     },
@@ -160,7 +163,7 @@
     /**
      * Checks if object is contained within the canvas with current viewportTransform
      * the check is done stopping at first point that appears on screen
-     * @param {Boolean} [calculate] use coordinates of current position instead of .oCoords
+     * @param {Boolean} [calculate] use coordinates of current position instead of .aCoords
      * @return {Boolean} true if object is fully or partially contained within canvas
      */
     isOnScreen: function(calculate) {
@@ -189,7 +192,7 @@
      * @param {Fabric.Point} pointTL Top Left point
      * @param {Fabric.Point} pointBR Top Right point
      * @param {Boolean} calculate use coordinates of current position instead of .oCoords
-     * @return {Boolean} true if the objects containe the point
+     * @return {Boolean} true if the object contains the point
      */
     _containsCenterOfCanvas: function(pointTL, pointBR, calculate) {
       // worst case scenario the object is so big that contains the screen
@@ -222,7 +225,8 @@
      * @param {Object} oCoords Coordinates of the object corners
      */
     _getImageLines: function(oCoords) {
-      return {
+
+      var lines = {
         topline: {
           o: oCoords.tl,
           d: oCoords.tr
@@ -240,6 +244,23 @@
           d: oCoords.tl
         }
       };
+
+      // // debugging
+      // if (this.canvas.contextTop) {
+      //   this.canvas.contextTop.fillRect(lines.bottomline.d.x, lines.bottomline.d.y, 2, 2);
+      //   this.canvas.contextTop.fillRect(lines.bottomline.o.x, lines.bottomline.o.y, 2, 2);
+      //
+      //   this.canvas.contextTop.fillRect(lines.leftline.d.x, lines.leftline.d.y, 2, 2);
+      //   this.canvas.contextTop.fillRect(lines.leftline.o.x, lines.leftline.o.y, 2, 2);
+      //
+      //   this.canvas.contextTop.fillRect(lines.topline.d.x, lines.topline.d.y, 2, 2);
+      //   this.canvas.contextTop.fillRect(lines.topline.o.x, lines.topline.o.y, 2, 2);
+      //
+      //   this.canvas.contextTop.fillRect(lines.rightline.d.x, lines.rightline.d.y, 2, 2);
+      //   this.canvas.contextTop.fillRect(lines.rightline.o.x, lines.rightline.o.y, 2, 2);
+      // }
+
+      return lines;
     },
 
     /**
@@ -294,7 +315,7 @@
 
     /**
      * Returns coordinates of object's bounding rectangle (left, top, width, height)
-     * the box is intented as aligned to axis of canvas.
+     * the box is intended as aligned to axis of canvas.
      * @param {Boolean} [absolute] use coordinates without viewportTransform
      * @param {Boolean} [calculate] use coordinates of current position instead of .oCoords / .aCoords
      * @return {Object} Object with left, top, width, height properties
@@ -305,7 +326,7 @@
     },
 
     /**
-     * Returns width of an object bounding box counting transformations
+     * Returns width of an object's bounding box counting transformations
      * before 2.0 it was named getWidth();
      * @return {Number} width value
      */
@@ -382,91 +403,109 @@
     },
 
     /**
-     * Calculate and returns the .coords of an object.
+     * Calculates and returns the .coords of an object.
      * @return {Object} Object with tl, tr, br, bl ....
      * @chainable
      */
     calcCoords: function(absolute) {
+      // this is a compatibility function to avoid removing calcCoords now.
+      if (absolute) {
+        return this.calcACoords();
+      }
+      return this.calcOCoords();
+    },
+
+    calcLineCoords: function(ignoreZoom) {
+      if (!this.aCoords) { this.aCoords = this.calcACoords(); }
+      var vpt = this.getViewportTransform();
+      var padding = this.padding, angle = degreesToRadians(this.angle),
+          cos = fabric.util.cos(angle), sin = fabric.util.sin(angle),
+          cosP = cos * padding, sinP = sin * padding, cosPSinP = cosP + sinP,
+          cosPMinusSinP = cosP - sinP, aCoords = this.aCoords;
+
+      var lineCoords = {
+        tl: { x: aCoords.tl.x, y: aCoords.tl.y },
+        tr: { x: aCoords.tr.x, y: aCoords.tr.y },
+        bl: { x: aCoords.bl.x, y: aCoords.bl.y },
+        br: { x: aCoords.br.x, y: aCoords.br.y },
+      };
+
+      if (!ignoreZoom) {
+        lineCoords.tl = transformPoint(aCoords.tl, vpt);
+        lineCoords.tr = transformPoint(aCoords.tr, vpt);
+        lineCoords.bl = transformPoint(aCoords.bl, vpt);
+        lineCoords.br = transformPoint(aCoords.br, vpt);
+      }
+
+      if (padding) {
+        lineCoords.tl.x -= cosPMinusSinP;
+        lineCoords.tl.y -= cosPSinP;
+        lineCoords.tr.x += cosPSinP;
+        lineCoords.tr.y -= cosPMinusSinP;
+        lineCoords.bl.x -= cosPSinP;
+        lineCoords.bl.y += cosPMinusSinP;
+        lineCoords.br.x += cosPMinusSinP;
+        lineCoords.br.y += cosPSinP;
+      }
+
+      return lineCoords;
+    },
+
+    calcOCoords: function() {
       var rotateMatrix = this._calcRotateMatrix(),
           translateMatrix = this._calcTranslateMatrix(),
           startMatrix = multiplyMatrices(translateMatrix, rotateMatrix),
           vpt = this.getViewportTransform(),
-          finalMatrix = absolute ? startMatrix : multiplyMatrices(vpt, startMatrix),
+          finalMatrix = multiplyMatrices(vpt, startMatrix),
           dim = this._getTransformedDimensions(),
-          w = dim.x / 2, h = dim.y / 2,
-          tl = transformPoint({ x: -w, y: -h }, finalMatrix),
-          tr = transformPoint({ x: w, y: -h }, finalMatrix),
-          bl = transformPoint({ x: -w, y: h }, finalMatrix),
-          br = transformPoint({ x: w, y: h }, finalMatrix);
-      if (!absolute) {
-        var padding = this.padding, angle = degreesToRadians(this.angle),
-            cos = fabric.util.cos(angle), sin = fabric.util.sin(angle),
-            cosP = cos * padding, sinP = sin * padding, cosPSinP = cosP + sinP,
-            cosPMinusSinP = cosP - sinP;
-        if (padding) {
-          tl.x -= cosPMinusSinP;
-          tl.y -= cosPSinP;
-          tr.x += cosPSinP;
-          tr.y -= cosPMinusSinP;
-          bl.x -= cosPSinP;
-          bl.y += cosPMinusSinP;
-          br.x += cosPMinusSinP;
-          br.y += cosPSinP;
-        }
-        var ml  = new fabric.Point((tl.x + bl.x) / 2, (tl.y + bl.y) / 2),
-            mt  = new fabric.Point((tr.x + tl.x) / 2, (tr.y + tl.y) / 2),
-            mr  = new fabric.Point((br.x + tr.x) / 2, (br.y + tr.y) / 2),
-            mb  = new fabric.Point((br.x + bl.x) / 2, (br.y + bl.y) / 2),
-            mtr = new fabric.Point(mt.x + sin * this.rotatingPointOffset, mt.y - cos * this.rotatingPointOffset);
-      }
+          coords = {};
+      this.forEachControl(function(control, fabricObject, key) {
+        coords[key] = control.positionHandler(dim, finalMatrix, fabricObject);
+      });
 
-      // if (!absolute) {
-      //   var canvas = this.canvas;
-      //   setTimeout(function() {
-      //     canvas.contextTop.clearRect(0, 0, 700, 700);
-      //     canvas.contextTop.fillStyle = 'green';
-      //     canvas.contextTop.fillRect(mb.x, mb.y, 3, 3);
-      //     canvas.contextTop.fillRect(bl.x, bl.y, 3, 3);
-      //     canvas.contextTop.fillRect(br.x, br.y, 3, 3);
-      //     canvas.contextTop.fillRect(tl.x, tl.y, 3, 3);
-      //     canvas.contextTop.fillRect(tr.x, tr.y, 3, 3);
-      //     canvas.contextTop.fillRect(ml.x, ml.y, 3, 3);
-      //     canvas.contextTop.fillRect(mr.x, mr.y, 3, 3);
-      //     canvas.contextTop.fillRect(mt.x, mt.y, 3, 3);
-      //     canvas.contextTop.fillRect(mtr.x, mtr.y, 3, 3);
-      //   }, 50);
-      // }
-
-      var coords = {
-        // corners
-        tl: tl, tr: tr, br: br, bl: bl,
-      };
-      if (!absolute) {
-        // middle
-        coords.ml = ml;
-        coords.mt = mt;
-        coords.mr = mr;
-        coords.mb = mb;
-        // rotating point
-        coords.mtr = mtr;
-      }
+      // debug code
+      // var canvas = this.canvas;
+      // setTimeout(function() {
+      //   canvas.contextTop.clearRect(0, 0, 700, 700);
+      //   canvas.contextTop.fillStyle = 'green';
+      //   Object.keys(coords).forEach(function(key) {
+      //     var control = coords[key];
+      //     canvas.contextTop.fillRect(control.x, control.y, 3, 3);
+      //   });
+      // }, 50);
       return coords;
     },
 
+    calcACoords: function() {
+      var rotateMatrix = this._calcRotateMatrix(),
+          translateMatrix = this._calcTranslateMatrix(),
+          finalMatrix = multiplyMatrices(translateMatrix, rotateMatrix),
+          dim = this._getTransformedDimensions(),
+          w = dim.x / 2, h = dim.y / 2;
+      return {
+        // corners
+        tl: transformPoint({ x: -w, y: -h }, finalMatrix),
+        tr: transformPoint({ x: w, y: -h }, finalMatrix),
+        bl: transformPoint({ x: -w, y: h }, finalMatrix),
+        br: transformPoint({ x: w, y: h }, finalMatrix)
+      };
+    },
+
     /**
-     * Sets corner position coordinates based on current angle, width and height
-     * See https://github.com/kangax/fabric.js/wiki/When-to-call-setCoords
+     * Sets corner position coordinates based on current angle, width and height.
+     * See {@link https://github.com/kangax/fabric.js/wiki/When-to-call-setCoords|When-to-call-setCoords}
      * @param {Boolean} [ignoreZoom] set oCoords with or without the viewport transform.
-     * @param {Boolean} [skipAbsolute] skip calculation of aCoords, usefull in setViewportTransform
+     * @param {Boolean} [skipAbsolute] skip calculation of aCoords, useful in setViewportTransform
      * @return {fabric.Object} thisArg
      * @chainable
      */
     setCoords: function(ignoreZoom, skipAbsolute) {
-      this.oCoords = this.calcCoords(ignoreZoom);
+      // this.oCoords = this.calcCoords(ignoreZoom);
       if (!skipAbsolute) {
-        this.aCoords = this.calcCoords(true);
+        this.aCoords = this.calcACoords();
       }
-
+      this.oCoords = this.calcOCoords();
+      this.lineCoords = this.calcLineCoords(ignoreZoom);
       // set coordinates of the draggable boxes in the corners used to scale/rotate the image
       ignoreZoom || (this._setCornerCoords && this._setCornerCoords());
 
@@ -478,11 +517,7 @@
      * @return {Array} rotation matrix for the object
      */
     _calcRotateMatrix: function() {
-      if (this.angle) {
-        var theta = degreesToRadians(this.angle), cos = fabric.util.cos(theta), sin = fabric.util.sin(theta);
-        return [cos, sin, -sin, cos, 0, 0];
-      }
-      return fabric.iMatrix.concat();
+      return fabric.util.calcRotateMatrix(this);
     },
 
     /**
@@ -505,10 +540,10 @@
     },
 
     /**
-     * calculate trasform Matrix that represent current transformation from
-     * object properties.
-     * @param {Boolean} [skipGroup] return transformMatrix for object and not go upward with parents
-     * @return {Array} matrix Transform Matrix for the object
+     * calculate transform matrix that represents the current transformations from the
+     * object's properties.
+     * @param {Boolean} [skipGroup] return transform matrix for object not counting parent transformations
+     * @return {Array} transform matrix for the object
      */
     calcTransformMatrix: function(skipGroup) {
       if (skipGroup) {
@@ -527,40 +562,40 @@
       return matrix;
     },
 
+    /**
+     * calculate transform matrix that represents the current transformations from the
+     * object's properties, this matrix does not include the group transformation
+     * @return {Array} transform matrix for the object
+     */
     calcOwnMatrix: function() {
       var key = this.transformMatrixKey(true), cache = this.ownMatrixCache || (this.ownMatrixCache = {});
       if (cache.key === key) {
         return cache.value;
       }
-      var matrix = this._calcTranslateMatrix(),
-          rotateMatrix,
-          dimensionMatrix = this._calcDimensionsTransformMatrix(this.skewX, this.skewY, true);
-      if (this.angle) {
-        rotateMatrix = this._calcRotateMatrix();
-        matrix = multiplyMatrices(matrix, rotateMatrix);
-      }
-      matrix = multiplyMatrices(matrix, dimensionMatrix);
+      var tMatrix = this._calcTranslateMatrix();
+      this.translateX = tMatrix[4];
+      this.translateY = tMatrix[5];
       cache.key = key;
-      cache.value = matrix;
-      return matrix;
+      cache.value = fabric.util.composeMatrix(this);
+      return cache.value;
     },
 
+    /*
+     * Calculate object dimensions from its properties
+     * @private
+     * @deprecated since 3.4.0, please use fabric.util._calcDimensionsTransformMatrix
+     * not including or including flipX, flipY to emulate the flipping boolean
+     * @return {Object} .x width dimension
+     * @return {Object} .y height dimension
+     */
     _calcDimensionsTransformMatrix: function(skewX, skewY, flipping) {
-      var skewMatrix,
-          scaleX = this.scaleX * (flipping && this.flipX ? -1 : 1),
-          scaleY = this.scaleY * (flipping && this.flipY ? -1 : 1),
-          scaleMatrix = [scaleX, 0, 0, scaleY, 0, 0];
-      if (skewX) {
-        skewMatrix = [1, 0, Math.tan(degreesToRadians(skewX)), 1];
-        scaleMatrix = multiplyMatrices(scaleMatrix, skewMatrix, true);
-      }
-      if (skewY) {
-        skewMatrix = [1, Math.tan(degreesToRadians(skewY)), 0, 1];
-        scaleMatrix = multiplyMatrices(scaleMatrix, skewMatrix, true);
-      }
-      return scaleMatrix;
+      return fabric.util.calcDimensionsMatrix({
+        skewX: skewX,
+        skewY: skewY,
+        scaleX: this.scaleX * (flipping && this.flipX ? -1 : 1),
+        scaleY: this.scaleY * (flipping && this.flipY ? -1 : 1)
+      });
     },
-
 
     /*
      * Calculate object dimensions from its properties
@@ -576,7 +611,9 @@
     },
 
     /*
-     * Calculate object bounding boxdimensions from its properties scale, skew.
+     * Calculate object bounding box dimensions from its properties scale, skew.
+     * @param {Number} skewX, a value to override current skewX
+     * @param {Number} skewY, a value to override current skewY
      * @private
      * @return {Object} .x width dimension
      * @return {Object} .y height dimension
@@ -588,12 +625,25 @@
       if (typeof skewY === 'undefined') {
         skewY = this.skewY;
       }
-      var dimensions = this._getNonTransformedDimensions();
-      if (skewX === 0 && skewY === 0) {
-        return { x: dimensions.x * this.scaleX, y: dimensions.y * this.scaleY };
+      var dimensions = this._getNonTransformedDimensions(), dimX, dimY,
+          noSkew = skewX === 0 && skewY === 0;
+
+      if (this.strokeUniform) {
+        dimX = this.width;
+        dimY = this.height;
       }
-      var dimX = dimensions.x / 2, dimY = dimensions.y / 2,
-          points = [
+      else {
+        dimX = dimensions.x;
+        dimY = dimensions.y;
+      }
+      if (noSkew) {
+        return this._finalizeDimensions(dimX * this.scaleX, dimY * this.scaleY);
+      }
+      else {
+        dimX /= 2;
+        dimY /= 2;
+      }
+      var points = [
             {
               x: -dimX,
               y: -dimY
@@ -610,23 +660,38 @@
               x: dimX,
               y: dimY
             }],
-          i, transformMatrix = this._calcDimensionsTransformMatrix(skewX, skewY, false),
-          bbox;
-      for (i = 0; i < points.length; i++) {
-        points[i] = fabric.util.transformPoint(points[i], transformMatrix);
-      }
-      bbox = fabric.util.makeBoundingBoxFromPoints(points);
-      return { x: bbox.width, y: bbox.height };
+          transformMatrix = fabric.util.calcDimensionsMatrix({
+            scaleX: this.scaleX,
+            scaleY: this.scaleY,
+            skewX: skewX,
+            skewY: skewY,
+          }),
+          bbox = fabric.util.makeBoundingBoxFromPoints(points, transformMatrix);
+      return this._finalizeDimensions(bbox.width, bbox.height);
     },
 
     /*
-     * Calculate object dimensions for controls. include padding and canvas zoom
+     * Calculate object bounding box dimensions from its properties scale, skew.
+     * @param Number width width of the bbox
+     * @param Number height height of the bbox
+     * @private
+     * @return {Object} .x finalized width dimension
+     * @return {Object} .y finalized height dimension
+     */
+    _finalizeDimensions: function(width, height) {
+      return this.strokeUniform ?
+        { x: width + this.strokeWidth, y: height + this.strokeWidth }
+        :
+        { x: width, y: height };
+    },
+    /*
+     * Calculate object dimensions for controls, including padding and canvas zoom.
      * private
      */
     _calculateCurrentDimensions: function()  {
       var vpt = this.getViewportTransform(),
           dim = this._getTransformedDimensions(),
-          p = fabric.util.transformPoint(dim, vpt, true);
+          p = transformPoint(dim, vpt, true);
 
       return p.scalarAdd(2 * this.padding);
     },
