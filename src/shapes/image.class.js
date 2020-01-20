@@ -46,15 +46,6 @@
       strokeWidth: 0,
 
       /**
-       * When calling {@link fabric.Image.getSrc}, return value from element src with `element.getAttribute('src')`.
-       * This allows for relative urls as image src.
-       * @since 2.7.0
-       * @type Boolean
-       * @default
-       */
-      srcFromAttribute: false,
-
-      /**
        * private
        * contains last value of scaleX to detect
        * if the Image got resized after the last Render
@@ -104,8 +95,17 @@
       ),
 
       /**
+       * When `true`, object is cached on an additional canvas.
+       * default to false for images
+       * since 1.7.0
+       * @type Boolean
+       * @default
+       */
+      objectCaching: false,
+
+      /**
        * key used to retrieve the texture representing this image
-       * @since 2.0.0
+       * since 2.0.0
        * @type String
        * @default
        */
@@ -113,7 +113,7 @@
 
       /**
        * Image crop in pixels from original image size.
-       * @since 2.0.0
+       * since 2.0.0
        * @type Number
        * @default
        */
@@ -121,7 +121,7 @@
 
       /**
        * Image crop in pixels from original image size.
-       * @since 2.0.0
+       * since 2.0.0
        * @type Number
        * @default
        */
@@ -147,7 +147,7 @@
        * @return {HTMLImageElement} Image element
        */
       getElement: function() {
-        return this._element || {};
+        return this._element;
       },
 
       /**
@@ -160,21 +160,17 @@
        * @chainable
        */
       setElement: function(element, options) {
-        this.removeTexture(this.cacheKey);
-        this.removeTexture(this.cacheKey + "_filtered");
+        var backend = fabric.filterBackend;
+        if (backend && backend.evictCachesForKey) {
+          backend.evictCachesForKey(this.cacheKey);
+          backend.evictCachesForKey(this.cacheKey + "_filtered");
+        }
         this._element = element;
         this._originalElement = element;
         this._scaledEl = element;
         this._filteredEl = element;
 
         this._initConfig(options);
-        if (this.filters.length !== 0) {
-          this.applyFilters();
-        }
-        // resizeFilters work on the already filtered copy.
-        // we need to apply resizeFilters AFTER normal filters.
-        // applyResizeFilters is run more often than normal fiters
-        // and is triggered by user interactions rather than dev code
         if (this.resizeFilter) {
           this.applyResizeFilters();
         }
@@ -185,34 +181,19 @@
       },
 
       /**
-       * Delete a single texture if in webgl mode
-       */
-      removeTexture: function(key) {
-        var backend = fabric.filterBackend;
-        if (backend && backend.evictCachesForKey) {
-          backend.evictCachesForKey(key);
-        }
-      },
-
-      /**
-       * Delete textures, reference to elements and eventually JSDOM cleanup
+       * Delete cacheKey if we have a webGlBackend
+       * delete reference to image elements
        */
       dispose: function() {
-        this.removeTexture(this.cacheKey);
-        this.removeTexture(this.cacheKey + "_filtered");
-        this._cacheContext = undefined;
-        [
-          "_originalElement",
-          "_element",
-          "_scaledEl",
-          "_filteredEl",
-          "_cacheCanvas"
-        ].forEach(
-          function(element) {
-            fabric.util.cleanUpJsdomNode(this[element]);
-            this[element] = undefined;
-          }.bind(this)
-        );
+        var backend = fabric.filterBackend;
+        if (backend && backend.evictCachesForKey) {
+          backend.evictCachesForKey(this.cacheKey);
+          backend.evictCachesForKey(this.cacheKey + "_filtered");
+        }
+        this._originalElement = undefined;
+        this._element = undefined;
+        this._scaledEl = undefined;
+        this._filteredEl = undefined;
       },
 
       /**
@@ -234,8 +215,8 @@
       getOriginalSize: function() {
         var element = this.getElement();
         return {
-          width: element.naturalWidth || element.width,
-          height: element.naturalHeight || element.height
+          width: element.width,
+          height: element.height
         };
       },
 
@@ -338,20 +319,18 @@
 
       /* _TO_SVG_START_ */
       /**
-       * Returns svg representation of an instance
-       * @return {Array} an array of strings with the specific svg representation
-       * of the instance
+       * Returns SVG representation of an instance
+       * @param {Function} [reviver] Method for further parsing of svg representation.
+       * @return {String} svg representation of an instance
        */
-      _toSVG: function() {
-        var svgString = [],
-          imageMarkup = [],
-          strokeSvg,
+      toSVG: function(reviver) {
+        var markup = this._createBaseSVGMarkup(),
           x = -this.width / 2,
           y = -this.height / 2,
           clipPath = "";
         if (this.hasCrop()) {
           var clipPathId = fabric.Object.__uid++;
-          svgString.push(
+          markup.push(
             '<clipPath id="imageCrop_' + clipPathId + '">\n',
             '\t<rect x="' +
               x +
@@ -366,15 +345,23 @@
           );
           clipPath = ' clip-path="url(#imageCrop_' + clipPathId + ')" ';
         }
-        imageMarkup.push(
+        markup.push(
+          '<g transform="',
+          this.getSvgTransform(),
+          this.getSvgTransformMatrix(),
+          '">\n'
+        );
+        var imageMarkup = [
           "\t<image ",
-          "COMMON_PARTS",
+          this.getSvgId(),
           'xlink:href="',
           this.getSvgSrc(true),
           '" x="',
           x - this.cropX,
           '" y="',
           y - this.cropY,
+          '" style="',
+          this.getSvgStyles(),
           // we're essentially moving origin of transformation from top/left corner to the center of the shape
           // by wrapping it in container <g> element with actual transformation, then offsetting object to the top/left
           // so that object's center aligns with container's left/top
@@ -385,12 +372,14 @@
           '"',
           clipPath,
           "></image>\n"
-        );
-
+        ];
+        if (this.paintFirst === "fill") {
+          Array.prototype.push.apply(markup, imageMarkup);
+        }
         if (this.stroke || this.strokeDashArray) {
           var origFill = this.fill;
           this.fill = null;
-          strokeSvg = [
+          markup.push(
             "\t<rect ",
             'x="',
             x,
@@ -403,15 +392,15 @@
             '" style="',
             this.getSvgStyles(),
             '"/>\n'
-          ];
+          );
           this.fill = origFill;
         }
         if (this.paintFirst !== "fill") {
-          svgString = svgString.concat(strokeSvg, imageMarkup);
-        } else {
-          svgString = svgString.concat(imageMarkup, strokeSvg);
+          Array.prototype.push.apply(markup, imageMarkup);
         }
-        return svgString;
+        markup.push("</g>\n");
+
+        return reviver ? reviver(markup.join("")) : markup.join("");
       },
       /* _TO_SVG_END_ */
 
@@ -426,12 +415,7 @@
           if (element.toDataURL) {
             return element.toDataURL();
           }
-
-          if (this.srcFromAttribute) {
-            return element.getAttribute("src");
-          } else {
-            return element.src;
-          }
+          return element.src;
         } else {
           return this.src || "";
         }
@@ -451,7 +435,7 @@
           function(img) {
             this.setElement(img, options);
             this._setWidthHeight();
-            callback && callback(this);
+            callback(this);
           },
           this,
           options && options.crossOrigin
@@ -471,29 +455,18 @@
         var filter = this.resizeFilter,
           retinaScaling = this.canvas ? this.canvas.getRetinaScaling() : 1,
           minimumScale = this.minimumScaleTrigger,
-          objectScale = this.getTotalObjectScaling(),
-          scaleX = objectScale.scaleX * retinaScaling,
+          scaleX = this.scaleX * retinaScaling,
           scaleY = this.scaleY * retinaScaling,
-          elementToScale = this._originalElement,
-          elementToFilter = this._filteredEl || this._originalElement;
+          elementToScale = this._originalElement;
         if (this.group) {
           this.set("dirty", true);
         }
-        if (!filter || (scaleX > minimumScale && scaleY > minimumScale)) {
-          this._element = elementToFilter;
-          this._filterScalingX = 1;
-          this._filterScalingY = 1;
-          this._lastScaleX = scaleX;
-          this._lastScaleY = scaleY;
-          return;
-        }
+
         if (!fabric.filterBackend) {
           fabric.filterBackend = fabric.initFilterBackend();
         }
         var canvasEl = fabric.util.createCanvasElement(),
-          cacheKey = this._filteredEl
-            ? this.cacheKey + "_filtered"
-            : this.cacheKey,
+          cacheKey = this.cacheKey,
           sourceWidth = elementToScale.width,
           sourceHeight = elementToScale.height;
         canvasEl.width = sourceWidth;
@@ -501,8 +474,8 @@
         this._element = canvasEl;
         this._scaledEl = canvasEl;
 
-        this._lastScaleX = filter.scaleX = scaleX;
-        this._lastScaleY = filter.scaleY = scaleY;
+        filter.scaleX = scaleX;
+        filter.scaleY = scaleY;
         fabric.filterBackend.applyFilters(
           [filter],
           elementToScale,
@@ -526,13 +499,11 @@
       applyFilters: function(filters) {
         filters = filters || this.filters || [];
         filters = filters.filter(function(filter) {
-          return filter && !filter.isNeutralState();
+          return filter;
         });
-        this.set("dirty", true);
-
-        // needs to clear out or WEBGL will not resize correctly
-        this.removeTexture(this.cacheKey + "_filtered");
-
+        if (this.group) {
+          this.set("dirty", true);
+        }
         if (filters.length === 0) {
           this._element = this._originalElement;
           this._filterScalingX = 1;
@@ -553,14 +524,10 @@
           this._filteredEl = canvasEl;
         } else {
           // clear the existing element to get new filter data
-          // also dereference the eventual resized _element
           this._element = this._filteredEl;
           this._filteredEl
             .getContext("2d")
             .clearRect(0, 0, sourceWidth, sourceHeight);
-          // we also need to resize again at next renderAll, so remove saved _lastScaleX/Y
-          this._lastScaleX = 1;
-          this._lastScaleY = 1;
         }
 
         if (!fabric.filterBackend) {
@@ -602,8 +569,6 @@
             backend = backend.fallback2dBackend || backend;
           }
 
-          console.log("applyFilters ", fGroup);
-
           backend.applyFilters(
             fGroup,
             newSource,
@@ -640,60 +605,46 @@
        */
       _render: function(ctx) {
         if (
-          this.isMoving !== true &&
+          this.isMoving === false &&
           this.resizeFilter &&
           this._needsResize()
         ) {
+          this._lastScaleX = this.scaleX;
+          this._lastScaleY = this.scaleY;
           this.applyResizeFilters();
         }
         this._stroke(ctx);
         this._renderPaintInOrder(ctx);
       },
 
-      /**
-       * Decide if the object should cache or not. Create its own cache level
-       * needsItsOwnCache should be used when the object drawing method requires
-       * a cache step. None of the fabric classes requires it.
-       * Generally you do not cache objects in groups because the group outside is cached.
-       * This is the special image version where we would like to avoid caching where possible.
-       * Essentially images do not benefit from caching. They may require caching, and in that
-       * case we do it. Also caching an image usually ends in a loss of details.
-       * A full performance audit should be done.
-       * @return {Boolean}
-       */
-      shouldCache: function() {
-        return this.needsItsOwnCache();
-      },
-
       _renderFill: function(ctx) {
-        var elementToDraw = this._element,
-          w = this.width,
+        var w = this.width,
           h = this.height,
-          sW = Math.min(
-            elementToDraw.naturalWidth || elementToDraw.width,
-            w * this._filterScalingX
-          ),
-          sH = Math.min(
-            elementToDraw.naturalHeight || elementToDraw.height,
-            h * this._filterScalingY
-          ),
+          sW = w * this._filterScalingX,
+          sH = h * this._filterScalingY,
           x = -w / 2,
           y = -h / 2,
-          sX = Math.max(0, this.cropX * this._filterScalingX),
-          sY = Math.max(0, this.cropY * this._filterScalingY);
-
+          elementToDraw = this._element;
         elementToDraw &&
-          ctx.drawImage(elementToDraw, sX, sY, sW, sH, x, y, w, h);
+          ctx.drawImage(
+            elementToDraw,
+            this.cropX * this._filterScalingX,
+            this.cropY * this._filterScalingY,
+            sW,
+            sH,
+            x,
+            y,
+            w,
+            h
+          );
       },
 
       /**
-       * needed to check if image needs resize
-       * @private
+       * @private, needed to check if image needs resize
        */
       _needsResize: function() {
-        var scale = this.getTotalObjectScaling();
         return (
-          scale.scaleX !== this._lastScaleX || scale.scaleY !== this._lastScaleY
+          this.scaleX !== this._lastScaleX || this.scaleY !== this._lastScaleY
         );
       },
 
@@ -701,7 +652,10 @@
        * @private
        */
       _resetWidthHeight: function() {
-        this.set(this.getOriginalSize());
+        var element = this.getElement();
+
+        this.set("width", element.width);
+        this.set("height", element.height);
       },
 
       /**
@@ -750,15 +704,22 @@
 
       /**
        * @private
-       * Set the width and the height of the image object, using the element or the
-       * options.
        * @param {Object} [options] Object with width/height properties
        */
       _setWidthHeight: function(options) {
-        options || (options = {});
-        var el = this.getElement();
-        this.width = options.width || el.naturalWidth || el.width || 0;
-        this.height = options.height || el.naturalHeight || el.height || 0;
+        this.width =
+          options && "width" in options
+            ? options.width
+            : this.getElement()
+            ? this.getElement().width || 0
+            : 0;
+
+        this.height =
+          options && "height" in options
+            ? options.height
+            : this.getElement()
+            ? this.getElement().height || 0
+            : 0;
       },
 
       /**
@@ -883,13 +844,8 @@
               [object.resizeFilter],
               function(resizeFilters) {
                 object.resizeFilter = resizeFilters[0];
-                fabric.util.enlivenObjects([object.clipPath], function(
-                  enlivedProps
-                ) {
-                  object.clipPath = enlivedProps[0];
-                  var image = new fabric.Image(img, object);
-                  callback(image);
-                });
+                var image = new fabric.Image(img, object);
+                callback(image);
               }
             );
           }
