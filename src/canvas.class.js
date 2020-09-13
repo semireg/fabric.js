@@ -23,7 +23,6 @@
    * @fires object:scaling while an object is being scaled by controls
    * @fires object:moving while an object is being dragged
    * @fires object:skewing while an object is being skewed from the controls
-   * @fires object:selected this event is deprecated. use selection:created
    *
    * @fires before:transform before a transform is is started
    * @fires before:selection:cleared
@@ -451,29 +450,6 @@
     },
 
     /**
-     * Checks if point is contained within an area of given object
-     * @param {Event} e Event object
-     * @param {fabric.Object} target Object to test against
-     * @param {Object} [point] x,y object of point coordinates we want to check.
-     * @return {Boolean} true if point is contained within an area of given object
-     */
-    containsPoint: function (e, target, point) {
-      var ignoreZoom = true,
-          pointer = point || this.getPointer(e, ignoreZoom),
-          xy, isTouch = e ? isTouchEvent(e) : false;
-
-      if (target.group && target.group === this._activeObject && target.group.type === 'activeSelection') {
-        xy = this._normalizePointer(target.group, pointer);
-      }
-      else {
-        xy = { x: pointer.x, y: pointer.y };
-      }
-      // http://www.geog.ubc.ca/courses/klink/gis.notes/ncgia/u32.html
-      // http://idav.ucdavis.edu/~okreylos/TAship/Spring2000/PointInPolygon.html
-      return (target.containsPoint(xy) || !!target._findTargetCorner(pointer, isTouch));
-    },
-
-    /**
      * @private
      */
     _normalizePointer: function (object, pointer) {
@@ -585,6 +561,7 @@
      * @private
      * @param {fabric.Object} target
      * @param {String} action
+     * @param {Boolean} altKey
      */
     _shouldCenterTransform: function (target, action, altKey) {
       if (!target) {
@@ -593,7 +570,7 @@
 
       var centerTransform;
 
-      if (action === 'scale' || action === 'scaleX' || action === 'scaleY') {
+      if (action === 'scale' || action === 'scaleX' || action === 'scaleY' || action === 'resizing') {
         centerTransform = this.centeredScaling || target.centeredScaling;
       }
       else if (action === 'rotate') {
@@ -658,8 +635,7 @@
         return;
       }
 
-      var pointer = this.getPointer(e), isTouch = isTouchEvent(e),
-          corner = target._findTargetCorner(this.getPointer(e, true), isTouch),
+      var pointer = this.getPointer(e), corner = target.__corner,
           actionHandler = !!corner && target.controls[corner].getActionHandler(),
           action = this._getActionFromCorner(alreadySelected, corner, e, target),
           origin = this._getOriginFromCorner(target, corner),
@@ -682,7 +658,7 @@
             ey: pointer.y,
             lastX: pointer.x,
             lastY: pointer.y,
-            // unsure they are usefull anymore.
+            // unsure they are useful anymore.
             // left: target.left,
             // top: target.top,
             theta: degreesToRadians(target.angle),
@@ -851,7 +827,10 @@
       if (obj &&
           obj.visible &&
           obj.evented &&
-          this.containsPoint(null, obj, pointer)) {
+          // http://www.geog.ubc.ca/courses/klink/gis.notes/ncgia/u32.html
+          // http://idav.ucdavis.edu/~okreylos/TAship/Spring2000/PointInPolygon.html
+          (obj.containsPoint(pointer) || !!obj._findTargetCorner(pointer))
+      ) {
         if ((this.perPixelTargetFind || obj.perPixelTargetFind) && !obj.isEditing) {
           var isTransparent = this.isTargetTransparent(obj, globalPointer.x, globalPointer.y);
           if (!isTransparent) {
@@ -878,7 +857,7 @@
       // until we call this function specifically to search inside the activeGroup
       while (i--) {
         var objToCheck = objects[i];
-        var pointerToUse = objToCheck.group && objToCheck.group.type !== 'activeSelection' ?
+        var pointerToUse = objToCheck.group ?
           this._normalizePointer(objToCheck.group, pointer) : pointer;
         if (this._checkTarget(pointerToUse, objToCheck, pointer)) {
           target = objects[i];
@@ -1150,11 +1129,6 @@
         somethingChanged && this.fire('selection:updated', opt);
       }
       else if (objects.length > 0) {
-        // deprecated event
-        if (objects.length === 1) {
-          opt.target = added[0];
-          this.fire('object:selected', opt);
-        }
         opt.selected = added;
         // added for backward compatibility
         opt.target = this._activeObject;

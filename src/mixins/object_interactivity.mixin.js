@@ -3,7 +3,6 @@
   var degreesToRadians = fabric.util.degreesToRadians;
 
   fabric.util.object.extend(fabric.Object.prototype, /** @lends fabric.Object.prototype */ {
-
     /**
      * Determines which corner has been clicked
      * @private
@@ -62,7 +61,7 @@
      */
     forEachControl: function(fn) {
       for (var i in this.controls) {
-        fn(this.controls[i], this, i);
+        fn(this.controls[i], i, this);
       };
     },
 
@@ -170,7 +169,7 @@
     drawBorders: function(ctx, styleOverride) {
       styleOverride = styleOverride || {};
       var wh = this._calculateCurrentDimensions(),
-          strokeWidth = 1 / this.borderScaleFactor,
+          strokeWidth = this.borderScaleFactor,
           width = wh.x + strokeWidth,
           height = wh.y + strokeWidth,
           hasControls = typeof styleOverride.hasControls !== 'undefined' ?
@@ -189,11 +188,11 @@
       );
 
       if (hasControls) {
-        this.forEachControl(function(control) {
+        ctx.beginPath();
+        this.forEachControl(function(control, key, fabricObject) {
           // in this moment, the ctx is centered on the object.
           // width and height of the above function are the size of the bbox.
-          ctx.beginPath();
-          if (control.withConnection && control.getVisibility()) {
+          if (control.withConnection && control.getVisibility(fabricObject, key)) {
             // reset movement for each control
             shouldStroke = true;
             ctx.moveTo(control.x * width, control.y * height);
@@ -223,21 +222,17 @@
      */
     drawBordersInGroup: function(ctx, options, styleOverride) {
       styleOverride = styleOverride || {};
-      var p = this._getNonTransformedDimensions(),
-          matrix = fabric.util.composeMatrix({
-            scaleX: options.scaleX,
-            scaleY: options.scaleY,
-            skewX: options.skewX
-          }),
-          wh = fabric.util.transformPoint(p, matrix),
-          strokeWidth = 1 / this.borderScaleFactor,
-          width = wh.x + strokeWidth,
-          height = wh.y + strokeWidth;
-
+      var bbox = fabric.util.sizeAfterTransform(this.width, this.height, options),
+          strokeWidth = this.strokeWidth,
+          strokeUniform = this.strokeUniform,
+          borderScaleFactor = this.borderScaleFactor,
+          width =
+            bbox.x + strokeWidth * (strokeUniform ? this.canvas.getZoom() : options.scaleX) + borderScaleFactor,
+          height =
+            bbox.y + strokeWidth * (strokeUniform ? this.canvas.getZoom() : options.scaleY) + borderScaleFactor;
       ctx.save();
       this._setLineDash(ctx, styleOverride.borderDashArray || this.borderDashArray, null);
       ctx.strokeStyle = styleOverride.borderColor || this.borderColor;
-
       ctx.strokeRect(
         -width / 2,
         -height / 2,
@@ -267,13 +262,14 @@
         ctx.strokeStyle = styleOverride.cornerStrokeColor || this.cornerStrokeColor;
       }
       this._setLineDash(ctx, styleOverride.cornerDashArray || this.cornerDashArray, null);
-      this.setCoords(false);
-      for (var c in this.controls) {
-        this.controls[c].render(ctx,
-          this.oCoords[c].x,
-          this.oCoords[c].y, styleOverride, this);
-      }
-
+      this.setCoords();
+      this.forEachControl(function(control, key, fabricObject) {
+        if (control.getVisibility(fabricObject, key)) {
+          control.render(ctx,
+            fabricObject.oCoords[key].x,
+            fabricObject.oCoords[key].y, styleOverride, fabricObject);
+        }
+      });
       ctx.restore();
 
       return this;
@@ -296,7 +292,10 @@
      * @chainable
      */
     setControlVisible: function(controlKey, visible) {
-      this.controls[controlKey].setVisibility(visible, this, controlKey);
+      if (!this._controlsVisibility) {
+        this._controlsVisibility = {};
+      }
+      this._controlsVisibility[controlKey] = visible;
       return this;
     },
 
@@ -324,18 +323,6 @@
       return this;
     },
 
-    /**
-     * Returns the instance of the control visibility set for this object.
-     * @private
-     * @returns {Object}
-     */
-    _getControlsVisibility: function() {
-      var visibility = {};
-      this.forEachControl(function(control, fabricObject, key) {
-        visibility[key] = control.getVisibility(fabricObject, key);
-      });
-      return visibility;
-    },
 
     /**
      * This callback function is called every time _discardActiveObject or _setActiveObject
