@@ -29578,6 +29578,13 @@ fabric.util.object.extend(fabric.IText.prototype, /** @lends fabric.IText.protot
     dynamicMinWidth: 2,
 
     /**
+     * User desired width during resize operation.
+     * @type Number
+     * @default
+     */
+    userDesiredWidth: 20,
+
+    /**
      * Cached array of text wrapping.
      * @type Array
      */
@@ -29633,6 +29640,9 @@ fabric.util.object.extend(fabric.IText.prototype, /** @lends fabric.IText.protot
       // wrap lines
       this._styleMap = this._generateStyleMap(this._splitText());
       // if after wrapping, the width is smaller than dynamicMinWidth, change the width and re-wrap
+
+      this.userDesiredWidth = this.width; // Added for automatically shrinking on resize
+
       if (this.dynamicMinWidth > this.width) {
         this._set('width', this.dynamicMinWidth);
       }
